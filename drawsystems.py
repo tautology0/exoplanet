@@ -2,106 +2,155 @@ from matplotlib import pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.patches import Rectangle
 import matplotlib.lines as lines
+import matplotlib.patches as mpatches
+import pyvo
+import math
 
 class Planet:
-    def __init__(self, name, axis, radius):
-        self.name=name
-        self.axis=axis
-        self.radius=radius
-        
+	def __init__(self, name, axes, period, radius):
+		self.name=name
+		self.axes=axes
+		self.period=period
+		self.radius=radius
+		
+	def __str__(self):
+		return str(self.__class__) + ": " + str(self.__dict__)
+		
 class System:
-    def __init__(self, name, planets):
-        self.name=name
-        self.planets=planets
-        
-def addsystem(system, y):
-    axis  =list(x.axis for x in system.planets)
-    radius=list(x.radius*4000 for x in system.planets)
-    names =list(x.name for x in system.planets)
-    yvals =[y] * len(axis)
-    cols  =[]
-    
-    ax.text(0.06, y+0.035, system.name, fontsize="x-large")
-    ax.add_artist(lines.Line2D([0.05,40], [y], color="lightgrey"))
-    ax.add_artist(lines.Line2D([0.05,40], [y-offh], color="grey"))
-    for z in radius:
-        col='red'
-        if   z<0.09*4000: col='grey'
-        elif z<0.16*4000: col='green'
-        elif z<0.55*4000: col='blue'
-        cols.append(col)
-    #ax.scatter(axis, yvals, marker="None")
-    ax.scatter(axis, yvals, marker='o', s=radius, c=cols, zorder=10)
-    for x, y, z, n in zip(axis, yvals, radius, names):
-        image=jovian
-        if   z<0.09: image=terrestial
-        elif z<0.16: image=superearth
-        elif z<0.55: image=neptunian
-        #ab=AnnotationBbox(OffsetImage(image, zoom=z*0.6), (x,y), frameon=False)
-        #ax.add_artist(ab)
-        #ax.plot(x,y, marker='o')
-        ax.text(x, y-0.030, n, horizontalalignment="center") 
+	def __init__(self, name, planets=None, epaname=None):
+		self.name=name
+		self.epaname=epaname
+		print(f"Adding system {self.name}")
+		
+		if name == "Sol":
+			self.planets=[
+			   Planet("Mercury", 0.467, 88, 0.035),	Planet("Venus", 0.723, 225, 0.087),
+			   Planet("Earth", 1, 365, 0.091),		 Planet("Mars", 1.523, 687, 0.048),
+			   Planet("Jupiter", 5.204, 4333, 1),	  Planet("Saturn", 9.583, 10759, 0.833),
+			   Planet("Uranus", 19.191, 30687, 0.363), Planet("Neptune", 30.07, 60190, 0.352)
+			]
+			return
+	   
+		if planets is not None:
+			self.planets=planets
+			return
+		
+		# Download the planet data from the Exoplanet archive
+		self.planets=getsystemdata(self.name, epaname=epaname)
+			
+	def smallest(self, attribute):
+		return min(getattr(planet, attribute) for planet in self.planets)
+	
+	def largest(self, attribute):
+		return max(getattr(planet, attribute) for planet in self.planets)
 
 
+def getsystemdata(name, epaname=None):
+	def search_epa(name, value, key):
+		if math.isnan(value):
+			for r in eparesults:
+				if r['pl_name'] == name: return r[key]
+		return value
+			
+	if epaname == None: epaname=name
+	service=pyvo.dal.TAPService("https://exoplanetarchive.ipac.caltech.edu/TAP")
+	eparesults=service.search(f"select pl_name, pl_radj, pl_orbper, pl_orbsmax from pscomppars where hostname = '{epaname}' ")
+	
+	service=pyvo.dal.TAPService("http://voparis-tap-planeto.obspm.fr/tap")
+	eeuresults=service.search(f"select target_name, radius, period, semi_major_axis from exoplanet.epn_core where star_name = '{name}'")
+	
+	planets=[]
+	for result in eeuresults:
+		name=result['target_name']
+		axes=search_epa(name, result['semi_major_axis'], 'pl_orbsmax')
+		period=search_epa(name, result['period'], 'pl_orbper')
+		radius=search_epa(name, result['radius'], 'pl_radj')
+
+		planets.append(Planet(name.split(' ')[-1], axes, period, radius))
+
+	return planets
+			
+def plotsystem(system, y, scalefactor, plotheight):
+	period=list(planet.period for planet in system.planets)
+	radius=list(planet.radius for planet in system.planets)
+	names =list(planet.name for planet in system.planets)
+	
+	# This is a hack to make life easier
+	yvals =[y] * len(period)
+	
+	# Assign a colour depending on planet type
+	cols  =[]
+	for z in radius:
+		col='red'
+		if   z<0.09: col='grey'
+		elif z<0.16: col='green'
+		elif z<0.55: col='blue'
+		cols.append(col)
+	
+	# draw system boundaries and label it
+	ax.text(xstart*1.1, y+0.035, system.name, fontsize="x-large")
+	ax.add_artist(lines.Line2D([xstart,xend], [y], color="lightgrey"))
+	ax.add_artist(lines.Line2D([xstart,xend], [y-plotheight/2], color="grey"))
+
+	# Plot the system
+	ax.scatter(period, yvals, marker='o', s=[r*scalefactor for r in radius], c=cols, zorder=10, edgecolors='black')
+	
+	# Label each planet
+	for period, y, name in zip(period, yvals, names):
+		ax.text(period, y-0.030, name, horizontalalignment="center") 
+
+def addlegend(plt):
+	terrestrial = mpatches.Patch(color='grey', label='Terrestrial')
+	earth = mpatches.Patch(color='green', label='Super-Earth')
+	neptunian = mpatches.Patch(color='blue', label='Neptunian')
+	jovian = mpatches.Patch(color='red', label='Jovian')
+	legend = plt.legend(handles=[terrestrial, earth, neptunian, jovian], loc='center right', prop={'size':25}, frameon=False)
 
 # Thanks to matplotlib working in archaic units, come on it's the 3rd millennium there's no
 # reason to ever use inches
-cm=1/2.54
 px=1/plt.rcParams['figure.dpi']
-plth=0.10
-offh=plth/2
+plotheight=0.10
 
-# Load images.
-terrestrial = plt.imread('images/mercury.png')
-superearth = plt.imread('images/earth.png')
-neptunian = plt.imread('images/neptune.png')
-jovian = plt.imread('images/jupiter.png')
+# targets is a list of systems to plot, if the contents are a string then it's the name of the system
+# sometimes exoplanet archive has a different name, in this case, use a tuple of ("exoplanet.eu", "exoplanet archive")
+targets=["Sol",("Kepler-90", "KOI-351"), "Kepler-33", "HD 10180",
+		 "HIP 41378", "HD 191939", "HD 34445", "K2-138", "TRAPPIST-1" ]
 
-# Data
 systems=[]
-systems.append(System("Sol",[
-               Planet("Mercury", 0.467, 0.035), Planet("Venus", 0.723, 0.087),
-               Planet("Earth", 1, 0.091),       Planet("Mars", 1.523, 0.048),
-               Planet("Jupiter", 5.204, 1),     Planet("Saturn", 9.583, 0.833),
-               Planet("Uranus", 19.191, 0.363), Planet("Neptune", 30.07, 0.352)
-            ]))
+for target in targets:
+	if type(target) is str: 
+		systems.append(System(target))
+	else:
+		systems.append(System(target[0], epaname=target[1]))
 
-systems.append(System("Kepler-90",[
-               Planet("b", 0.074, 0.117),       Planet("c", 0.089, 0.106),
-               Planet("i", 0.2, 0.118),         Planet("d", 0.32, 0.256),
-               Planet("e", 0.42, 0.237),        Planet("f", 0.48, 0.257),
-               Planet("g", 0.71, 0.723),        Planet("h", 1.01, 1.008)
-            ]))
+smallest=min(system.smallest("period") for system in systems)
+largest=max(system.largest("period") for system in systems)
+xstart=smallest-1
+# Making it a 1/3rd again ensures Neptune isn't clipped
+xend=largest*(3/2)
 
-systems.append(System("Kepler-33",[
-               Planet("b", 0.0677, 0.115),      Planet("c", 0.1189, 0.285),
-               Planet("d", 0.1662, 0.477),      Planet("e", 0.2138, 0.359),
-               Planet("f", 0.2535, 0.398)
-            ]))
+fig, ax = plt.subplots(figsize=(2000*px, len(systems)*220*px))
 
-systems.append(System("HIP 41378",[
-               Planet("b",0.1283,0.26),        Planet("c",0.2061,0.228),
-               Planet("d",0.88,0.353),         Planet("e",1.06,0.4916),
-               Planet("f",1.37,0.821)
-            ]))
-
-# Create figure
-fig, ax = plt.subplots(figsize=(1800*px, len(systems)*220*px))
+# set up axes
 ax.yaxis.set_visible(False)
-ax.xaxis.tick_top()
-ax.set_xlabel("Semi-major Axis / AU", fontsize='large')
-ax.xaxis.set_label_position('top') 
-ax.set_facecolor('white')
+ax.xaxis.tick_bottom()
+ax.set_xlabel("Orbital Period / days", fontsize='xx-large')
+ax.xaxis.set_label_position('bottom') 
+
+# Generic plot configuration
 fig.set_facecolor('white')
 plt.xscale('log')
 plt.tight_layout(pad=0.05)
-plt.ylim((-plth*(len(systems)-1))-(plth), 0)
-plt.xlim(0.055, 40)
+plt.ylim((-plotheight*(len(systems)-1))-(plotheight), 0)
+plt.xlim(xstart, xend)
 plt.rcParams.update({'font.size': 18})
 
-y=-offh
+y=-plotheight/2
 for system in systems:
-    addsystem(system, y)
-    y -= plth
+	print(f"Plotting system {system.name}")
+	plotsystem(system, y, 3500, plotheight)
+	y -= plotheight
 
-plt.savefig('images/systems.png', bbox_inches='tight')
+addlegend(plt)
+
+plt.savefig('systems.png', bbox_inches='tight')
