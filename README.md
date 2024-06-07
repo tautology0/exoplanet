@@ -12,3 +12,7 @@ Where axes uses AU and radius uses Jupiter radius
 ---
 
 There's legacy code where it used a picture of Mercury / Earth / Neptune / Jupiter for each class; I felt this distracted from the chart so I replaced them with colours. If you want to change this I used a set of pictures of each planet which were 122 x 122 pixels. Then uncomment lines 33, 40, 41 and 42 and comment out line 34.
+
+---
+# Example Plot
+![Comparative chart of semi-major axis in AU and planetary size and class of planets within the Sol, Kepler-90, Kepler-33 and HIP 41378 solar systems](systems.png)
